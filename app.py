@@ -8,7 +8,12 @@ app = Flask(__name__)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase = None
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        print("⚠️ Supabase connection failed:", e)
 
 @app.route("/", methods=["GET"])
 def home():
@@ -63,14 +68,15 @@ def convert():
         download_url = download.url
         title = download.suggested_filename.rsplit(".", 1)[0]
 
-        supabase.table("downloads").insert({
-            "video_url": url,
-            "format": fmt,
-            "quality": quality if fmt == "mp4" else "N/A",
-            "download_url": download_url,
-            "title": title,
-            "timestamp": int(time.time())
-        }).execute()
+        if supabase:
+            supabase.table("downloads").insert({
+                "video_url": url,
+                "format": fmt,
+                "quality": quality if fmt == "mp4" else "N/A",
+                "download_url": download_url,
+                "title": title,
+                "timestamp": int(time.time())
+            }).execute()
 
         browser.close()
         return jsonify({"title": title, "download_url": download_url})
