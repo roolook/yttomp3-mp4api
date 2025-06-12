@@ -1,12 +1,14 @@
 import os
 import time
-from flask import Flask, request, jsonify
+import requests
+from urllib.parse import urlparse
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from supabase import create_client
 from playwright.sync_api import sync_playwright
 
 app = Flask(__name__)
-CORS(app)  # ✅ Enable CORS for all routes
+CORS(app)
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -16,6 +18,9 @@ if SUPABASE_URL and SUPABASE_KEY:
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     except Exception as e:
         print("⚠️ Supabase connection failed:", e)
+
+DOWNLOAD_DIR = os.path.join(os.path.dirname(__file__), 'downloads')
+os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 @app.route("/", methods=["GET"])
 def home():
@@ -42,43 +47,26 @@ def convert():
             accept_downloads=True
         )
         context.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-        context.route("**/*", lambda route, request: (
-            route.abort() if request.resource_type in ["image", "stylesheet", "font"] else route.continue_()
-        ))
         page = context.new_page()
-        page.goto("https://cnvmp3.com/v25", timeout=60000)
+        page.goto("https://ytmp3.plus/en1/")
 
-        if fmt == "mp4":
-            page.click("#format-select-display")
-            page.wait_for_selector('.format-select-options[data-format="0"]', timeout=5000)
-            page.click('.format-select-options[data-format="0"]')
-            page.fill("input#video-url", url)
-            page.click("#quality-video-select-display")
-            page.wait_for_selector(f'#quality-video-select-list-{quality}', timeout=5000)
-            page.click(f'#quality-video-select-list-{quality}')
-        else:
-            page.fill("input#video-url", url)
-
-        with page.expect_download() as download_info:
-            page.click("input#convert-button-1")
-            try:
-                page.click("a#download-btn", timeout=1000)
-            except:
-                pass
-
-        download = download_info.value
-        download_url = download.url
-        title = download.suggested_filename.rsplit(".", 1)[0]
-
-        if supabase:
-            supabase.table("downloads").insert({
-                "video_url": url,
-                "format": fmt,
-                "quality": quality if fmt == "mp4" else "N/A",
-                "download_url": download_url,
-                "title": title,
-                "timestamp": int(time.time())
-            }).execute()
-
+        input_box = page.wait_for_selector("input[name='url']")
+        input_box.fill(url)
+        page.click("button[type='submit']")
+        page.wait_for_selector("a[href*='/download']", timeout=60000)
+        download_link = page.query_selector("a[href*='/download']").get_attribute("href")
         browser.close()
-        return jsonify({"title": title, "download_url": download_url})
+
+    filename = f"{int(time.time())}.{fmt}"
+    file_path = os.path.join(DOWNLOAD_DIR, filename)
+
+    with requests.get(download_link, stream=True) as r:
+        r.raise_for_status()
+        with open(file_path, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+    download_url = f"{request.url_root}downloads/{filename}"
+    return jsonify({"download": download_url})
+
+@app.route('/downloads/
