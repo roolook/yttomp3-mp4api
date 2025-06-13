@@ -3,5 +3,8 @@ services:
     name: ytmp3-api
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt && playwright install && playwright install-deps
-    startCommand: gunicorn app:app
+    buildCommand: |
+      pip install -r requirements.txt
+      playwright install chromium
+      playwright install-deps
+    startCommand: gunicorn --timeout 120 --workers 1 app:app
